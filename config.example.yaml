@@ -1,0 +1,22 @@
+# Les chemins relatifs sont résolus depuis le dossier de ce fichier.
+output: ./export
+
+projects:
+  - name: documentation
+    source: https://github.com/organisation/documentation.git
+    ref: main
+    username: git
+    token_env: DOCS_GIT_TOKEN
+
+  - name: interne
+    source: git@gitlab.example.com:equipe/documentation.git
+    ref: main
+    ssh_key: ./keys/id_ed25519
+    ssh_passphrase_env: DOCS_SSH_PASSPHRASE
+    site_url_template: "{repo_url}/-/blob/{commit}/{path}"
+
+  - name: local
+    source: ../mon-projet
+    # HEAD par défaut ; origin sert à construire les liens GitHub/GitLab.
+    # Sans origin, donner un modèle absolu :
+    site_url_template: "https://git.example.com/equipe/mon-projet/blob/{commit}/{path}"
