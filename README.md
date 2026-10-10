@@ -2,6 +2,8 @@
 
 A Go CLI that exports Markdown files from multiple Git repositories and enriches their YAML frontmatter. The binary runs without an installed Git executable or GitHub/GitLab APIs.
 
+![AI-Assisted](https://img.shields.io/badge/Development-Human%20%2B%20AI-blue)
+
 ## Build and run
 
 Go **1.25 or later** is required to build. Dependencies are pinned in `go.mod` and `go.sum`.
@@ -150,3 +152,10 @@ go build -o bin/git-exporter .
 ```
 
 Tests create repositories, packs, and HTTPS/SSH Git servers in Go without running the Git CLI or contacting a hosting provider. They cover transmitted objects, fallback, metadata, blob batches, SSH verification, configuration, frontmatter, and manifest-controlled deletions.
+
+
+## Development
+
+This project is developed through human and AI collaboration.
+
+AI tools are used to assist with code generation, refactoring, documentation, and testing
