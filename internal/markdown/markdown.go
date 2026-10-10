@@ -57,6 +57,11 @@ func SiteURL(remote, template, commit, filename string) (string, error) {
 	return value, nil
 }
 
+// DocumentID returns the stable document identity for a project and repository-relative path.
+func DocumentID(project, filename string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(project+"\x00"+filename)))
+}
+
 // Transform adds or replaces managed YAML frontmatter fields using project and Git metadata.
 // It preserves the body, any UTF-8 BOM, and custom field values, and rejects invalid frontmatter.
 func Transform(input []byte, project, filename, site string, meta gitdata.Metadata) ([]byte, error) {
@@ -112,7 +117,7 @@ func Transform(input []byte, project, filename, site string, meta gitdata.Metada
 			return nil, fmt.Errorf("unterminated YAML frontmatter")
 		}
 	}
-	id := fmt.Sprintf("%x", sha256.Sum256([]byte(project+"\x00"+filename)))
+	id := DocumentID(project, filename)
 	values := []struct {
 		key   string
 		value any

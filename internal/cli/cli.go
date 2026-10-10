@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"git-exporter/internal/config"
 	"git-exporter/internal/exporter"
+	"sort"
+
+	"github.com/apcera/termtables"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +18,7 @@ func New() *cobra.Command {
 	root := &cobra.Command{Use: "git-exporter", Short: "Export Git Markdown files with their metadata", SilenceUsage: true, Version: Version}
 	var filename, output string
 	var repos []string
+	var verbose bool
 	fields := map[string]*[]string{}
 	command := &cobra.Command{
 		Use:   "export",
@@ -23,6 +27,8 @@ func New() *cobra.Command {
 Configure projects with --config (-c) or repeatable --repo name=source options.
 Per-project options use name=value. Explicit CLI settings override configuration values.
 Use --output (-o) to choose the destination directory.
+Use --verbose (-v) to list exported files with their Page ID, Url, and Markdown file
+path, followed by the total number of Markdown files retrieved.
 
 SSH passphrases:
   DOCS_SSH_PASSPHRASE is an example environment variable containing the passphrase
@@ -37,6 +43,9 @@ SSH passphrases:
   agent is used and ssh_passphrase_env is ignored.`,
 		Example: `  # Export projects from a configuration file, overriding the output directory.
   git-exporter export -c config.example.yaml -o ./export
+
+  # Show exported document IDs, source URLs, file paths, and the total count.
+  git-exporter export -c config.example.yaml -o ./export --verbose
 
   # Export a local repository without origin using an explicit file URL template.
   git-exporter export --repo docs=../my-project -o ./export \
@@ -60,6 +69,7 @@ SSH passphrases:
 	}
 	command.Flags().StringVarP(&filename, "config", "c", "", "YAML configuration file")
 	command.Flags().StringVarP(&output, "output", "o", "", "Output directory")
+	command.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show exported files in a table and their total count")
 	command.Flags().StringArrayVar(&repos, "repo", nil, "Project name=source (repeatable)")
 	for _, name := range []string{"ref", "username", "token-env", "ssh-key", "ssh-passphrase-env", "site-url-template"} {
 		usage := "Setting name=value (repeatable)"
@@ -78,6 +88,7 @@ SSH passphrases:
 			return err
 		}
 		failures := 0
+		var exportedFiles []exporter.ExportedFile
 		for _, p := range cfg.Projects {
 			if err := cmd.Context().Err(); err != nil {
 				return err
@@ -89,6 +100,19 @@ SSH passphrases:
 				continue
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s: mode=%s, exported=%d, deleted=%d\n", p.Name, result.Mode, result.Exported, result.Deleted)
+			if verbose {
+				exportedFiles = append(exportedFiles, result.Files...)
+			}
+		}
+		if verbose {
+			sort.Slice(exportedFiles, func(i, j int) bool { return exportedFiles[i].Path < exportedFiles[j].Path })
+			table := termtables.CreateTable()
+			table.AddHeaders("Page ID", "Url", "Markdown file")
+			for _, file := range exportedFiles {
+				table.AddRow(file.PageID, file.URL, file.Path)
+			}
+			fmt.Fprint(cmd.OutOrStdout(), table.Render())
+			fmt.Fprintf(cmd.OutOrStdout(), "Markdown files retrieved: %d\n", len(exportedFiles))
 		}
 		if failures > 0 {
 			return fmt.Errorf("%d project(s) failed", failures)

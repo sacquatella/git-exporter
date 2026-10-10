@@ -122,6 +122,19 @@ Public GitHub and GitLab URLs are inferred from the remote source, or from `orig
 
 ## Repeated exports and errors
 
+Use `export --verbose` or `export -v` to display a table of successfully exported
+files with the columns `Page ID`, `Url`, and `Markdown file`, followed by the total
+number of Markdown files retrieved. `Page ID` matches the generated `doc_id`, `Url`
+matches `site_url`, and `Markdown file` is the exported file's destination path.
+The table combines all successful projects; failed projects are excluded.
+
+```sh
+git-exporter export -c config.example.yaml -o ./export -v
+```
+
+At the root, `git-exporter -v` still displays the version; after `export`, `-v`
+enables verbose output.
+
 Each project subdirectory contains `.git-exporter-manifest.json`, which lists its exports. A subsequent export updates current files and removes only previously recorded exports that are no longer present. Unmanaged files are preserved; a collision produces an error. Do not delete or modify the manifest for an existing export.
 
 All contents and paths are validated and prepared before publication. A preparation error leaves previous files intact. Files are published through individual renames; publication is not an atomic transaction for the entire project if a system failure occurs. Symbolic-link ancestors and paths escaping the destination are rejected. A `.git-exporter.lock` directory prevents concurrent publication: after an abrupt shutdown, remove it only after checking that no export is still running.

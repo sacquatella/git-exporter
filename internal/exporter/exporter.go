@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"git-exporter/internal/config"
@@ -16,6 +17,14 @@ import (
 type Result struct {
 	Mode              string
 	Exported, Deleted int
+	Files             []ExportedFile
+}
+
+// ExportedFile describes a published Markdown document and its source URL.
+type ExportedFile struct {
+	PageID string
+	URL    string
+	Path   string
 }
 
 // SafeError redacts configured token and SSH passphrase values, including their
@@ -54,6 +63,7 @@ func Run(ctx context.Context, output string, p config.Project, log io.Writer) (R
 		return result, err
 	}
 	prepared := map[string][]byte{}
+	var exportedFiles []ExportedFile
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -83,6 +93,11 @@ func Run(ctx context.Context, output string, p config.Project, log io.Writer) (R
 			return result, fmt.Errorf("%s: %w", file.Path, err)
 		}
 		prepared[file.Path] = transformed
+		exportedFiles = append(exportedFiles, ExportedFile{
+			PageID: markdown.DocumentID(p.Name, file.Path),
+			URL:    site,
+			Path:   filepath.Join(output, p.Name, filepath.FromSlash(file.Path)),
+		})
 	}
 	if err := ctx.Err(); err != nil {
 		return result, err
@@ -92,5 +107,6 @@ func Run(ctx context.Context, output string, p config.Project, log io.Writer) (R
 		return result, err
 	}
 	result.Exported = len(prepared)
+	result.Files = exportedFiles
 	return result, nil
 }
