@@ -35,10 +35,12 @@ type Overrides struct {
 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
+// IsRemote reports whether source uses URL or SCP-style syntax rather than a local path.
 func IsRemote(source string) bool {
 	return strings.Contains(source, "://") || (!filepath.IsAbs(source) && strings.Contains(source, ":"))
 }
 
+// relative resolves a relative path against base, leaving empty and absolute paths unchanged.
 func relative(base, value string) string {
 	if value == "" || filepath.IsAbs(value) {
 		return value
@@ -46,6 +48,8 @@ func relative(base, value string) string {
 	return filepath.Join(base, value)
 }
 
+// Load reads optional YAML configuration, resolves its paths relative to the file,
+// applies CLI overrides, and validates the resulting output and project settings.
 func Load(filename string, overrides Overrides) (Config, error) {
 	var cfg Config
 	if filename != "" {
@@ -57,10 +61,10 @@ func Load(filename string, overrides Overrides) (Config, error) {
 		v.SetConfigFile(absolute)
 		v.SetConfigType("yaml")
 		if err := v.ReadInConfig(); err != nil {
-			return cfg, fmt.Errorf("lecture configuration: %w", err)
+			return cfg, fmt.Errorf("reading configuration: %w", err)
 		}
 		if err := v.UnmarshalExact(&cfg); err != nil {
-			return cfg, fmt.Errorf("configuration invalide: %w", err)
+			return cfg, fmt.Errorf("invalid configuration: %w", err)
 		}
 		base := filepath.Dir(absolute)
 		cfg.Output = relative(base, cfg.Output)
@@ -75,7 +79,7 @@ func Load(filename string, overrides Overrides) (Config, error) {
 	indices := map[string]int{}
 	for i, p := range cfg.Projects {
 		if _, exists := indices[p.Name]; exists {
-			return cfg, fmt.Errorf("projet dupliqué: %s", p.Name)
+			return cfg, fmt.Errorf("duplicate project: %s", p.Name)
 		}
 		indices[p.Name] = i
 	}
@@ -83,10 +87,10 @@ func Load(filename string, overrides Overrides) (Config, error) {
 	for _, item := range overrides.Repos {
 		name, value, ok := strings.Cut(item, "=")
 		if !ok || value == "" {
-			return cfg, fmt.Errorf("--repo attend nom=source")
+			return cfg, fmt.Errorf("--repo expects name=source")
 		}
 		if cliNames[name] {
-			return cfg, fmt.Errorf("--repo dupliqué: %s", name)
+			return cfg, fmt.Errorf("duplicate --repo: %s", name)
 		}
 		cliNames[name] = true
 		i, exists := indices[name]
@@ -101,11 +105,11 @@ func Load(filename string, overrides Overrides) (Config, error) {
 		for _, item := range items {
 			name, value, ok := strings.Cut(item, "=")
 			if !ok {
-				return cfg, fmt.Errorf("--%s attend nom=valeur", field)
+				return cfg, fmt.Errorf("--%s expects name=value", field)
 			}
 			i, exists := indices[name]
 			if !exists {
-				return cfg, fmt.Errorf("--%s: projet inconnu %s", field, name)
+				return cfg, fmt.Errorf("--%s: unknown project %s", field, name)
 			}
 			p := &cfg.Projects[i]
 			switch field {
@@ -122,7 +126,7 @@ func Load(filename string, overrides Overrides) (Config, error) {
 			case "site-url-template":
 				p.SiteURLTemplate = value
 			default:
-				return cfg, fmt.Errorf("option inconnue: %s", field)
+				return cfg, fmt.Errorf("unknown option: %s", field)
 			}
 		}
 	}
@@ -130,33 +134,33 @@ func Load(filename string, overrides Overrides) (Config, error) {
 		cfg.Output = overrides.Output
 	}
 	if cfg.Output == "" {
-		return cfg, fmt.Errorf("répertoire cible requis (--output ou output)")
+		return cfg, fmt.Errorf("output directory required (--output or output)")
 	}
 	if len(cfg.Projects) == 0 {
-		return cfg, fmt.Errorf("au moins un projet est requis")
+		return cfg, fmt.Errorf("at least one project is required")
 	}
 	for _, p := range cfg.Projects {
 		if !namePattern.MatchString(p.Name) {
-			return cfg, fmt.Errorf("nom de projet invalide: %q", p.Name)
+			return cfg, fmt.Errorf("invalid project name: %q", p.Name)
 		}
 		if p.Source == "" {
-			return cfg, fmt.Errorf("%s: source requise", p.Name)
+			return cfg, fmt.Errorf("%s: source required", p.Name)
 		}
 		if strings.Contains(p.Source, "://") {
 			u, err := url.Parse(p.Source)
 			if err != nil {
-				return cfg, fmt.Errorf("%s: URL invalide", p.Name)
+				return cfg, fmt.Errorf("%s: invalid URL", p.Name)
 			}
 			if u.Scheme != "https" && u.Scheme != "ssh" {
-				return cfg, fmt.Errorf("%s: seuls HTTPS et SSH sont pris en charge", p.Name)
+				return cfg, fmt.Errorf("%s: only HTTPS and SSH are supported", p.Name)
 			}
 			if u.User != nil {
 				if _, set := u.User.Password(); set {
-					return cfg, fmt.Errorf("%s: utiliser token_env au lieu d'un secret dans l'URL", p.Name)
+					return cfg, fmt.Errorf("%s: use token_env instead of embedding a secret in the URL", p.Name)
 				}
 			}
 			if u.RawQuery != "" || u.Fragment != "" {
-				return cfg, fmt.Errorf("%s: paramètres et fragments interdits dans l'URL Git", p.Name)
+				return cfg, fmt.Errorf("%s: query parameters and fragments are not allowed in the Git URL", p.Name)
 			}
 		}
 	}

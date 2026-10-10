@@ -23,8 +23,8 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// go-git's server decoder does not yet understand filter lines; strip and
-// validate that extension here while retaining its parser for the other lines.
+// decodeTestRequest extracts filter lines from an upload request before passing
+// the remaining lines to go-git's decoder, then restores the requested filter.
 func decodeTestRequest(reader io.Reader) (*packp.UploadRequest, error) {
 	var raw bytes.Buffer
 	encoder := pktline.NewEncoder(&raw)
@@ -55,6 +55,8 @@ func decodeTestRequest(reader io.Reader) (*packp.UploadRequest, error) {
 	return req, nil
 }
 
+// TestSelectiveSSHAndHostVerification checks selective fetching over SSH
+// and rejection of a changed host key without fallback.
 func TestSelectiveSSHAndHostVerification(t *testing.T) {
 	fixture := testrepo.New(t)
 	head := fixture.Commit(map[string]*string{"a.md": testrepo.Text("body"), "binary": testrepo.Text("excluded")})
@@ -176,7 +178,7 @@ func TestSelectiveSSHAndHostVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 	source.Close()
-	if source.Mode != "sélectif" {
+	if source.Mode != "selective" {
 		t.Fatal(source.Mode)
 	}
 	// A changed host key must fail, with no full-clone retry.

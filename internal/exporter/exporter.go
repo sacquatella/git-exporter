@@ -18,18 +18,22 @@ type Result struct {
 	Exported, Deleted int
 }
 
+// SafeError redacts configured token and SSH passphrase values, including their
+// URL-encoded forms, from an error message before it is displayed.
 func SafeError(err error, p config.Project) string {
 	message := err.Error()
 	for _, name := range []string{p.TokenEnv, p.SSHPassphraseEnv} {
 		if secret := os.Getenv(name); secret != "" {
 			for _, value := range []string{secret, url.QueryEscape(secret), url.PathEscape(secret)} {
-				message = strings.ReplaceAll(message, value, "[masqué]")
+				message = strings.ReplaceAll(message, value, "[redacted]")
 			}
 		}
 	}
 	return message
 }
 
+// Run reads a project's committed Markdown files, enriches them with Git metadata,
+// and synchronizes the destination only after all files have been prepared successfully.
 func Run(ctx context.Context, output string, p config.Project, log io.Writer) (Result, error) {
 	source, err := gitdata.Open(ctx, p, log)
 	if err != nil {

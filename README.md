@@ -1,19 +1,26 @@
 # git-exporter
 
-CLI Go qui exporte les fichiers Markdown de plusieurs dépôts Git et enrichit leur frontmatter YAML. Le binaire fonctionne sans programme Git installé et sans API GitHub/GitLab.
+A Go CLI that exports Markdown files from multiple Git repositories and enriches their YAML frontmatter. The binary runs without an installed Git executable or GitHub/GitLab APIs.
 
-## Compiler et lancer
+## Build and run
 
-Go **1.25 ou plus récent** est requis pour compiler. Les dépendances sont verrouillées dans `go.mod` et `go.sum`.
+Go **1.25 or later** is required to build. Dependencies are pinned in `go.mod` and `go.sum`.
 
 ```sh
 go build -o bin/git-exporter .
-./bin/git-exporter export --repo docs=https://github.com/organisation/docs.git --output ./export
+./bin/git-exporter --version
+./bin/git-exporter export --repo docs=https://github.com/organization/docs.git --output ./export
 ./bin/git-exporter export --config config.example.yaml
 ./bin/git-exporter export --help
 ```
 
-Le fichier d’exemple contient des adresses fictives à remplacer. Le binaire compilé n’a pas besoin de Go à l’exécution.
+`--version` (or `-v`) displays the binary version. It defaults to `dev` when
+building directly with `go build`. The Makefile uses
+`git describe --tags --always --dirty` (override it with `make VERSION=v1.2.3 build-linux-amd`),
+and releases use their Git tag. To inject a version manually:
+`go build -ldflags "-X git-exporter/internal/cli.Version=v1.2.3" -o bin/git-exporter .`.
+
+The example file contains placeholder addresses that must be replaced. The compiled binary does not require Go at runtime.
 
 ## Configuration
 
@@ -21,19 +28,19 @@ Le fichier d’exemple contient des adresses fictives à remplacer. Le binaire c
 output: ./export
 projects:
   - name: docs
-    source: https://github.com/organisation/docs.git
+    source: https://github.com/organization/docs.git
     ref: main
     token_env: DOCS_TOKEN
   - name: local
-    source: ../mon-projet
-    site_url_template: "https://git.example.com/equipe/projet/blob/{commit}/{path}"
+    source: ../my-project
+    site_url_template: "https://git.example.com/team/project/blob/{commit}/{path}"
 ```
 
-`name` est un identifiant stable, unique, composé de lettres ASCII, chiffres, points, tirets et underscores, commençant par une lettre ou un chiffre. Il détermine le sous-dossier d’export et entre dans le calcul des identifiants des documents.
+`name` is a stable, unique identifier containing ASCII letters, digits, periods, hyphens, and underscores, starting with a letter or digit. It determines the export subdirectory and is used to calculate document IDs.
 
-Les options explicitement passées en CLI remplacent les valeurs YAML. Les projets sont fusionnés par nom ; `--repo` ajoute un projet ou remplace sa source. Une option ciblant un projet inconnu est une erreur. Les chemins du YAML sont relatifs au fichier de configuration ; ceux du CLI sont relatifs au répertoire courant. Aucun fichier de configuration n’est chargé implicitement.
+Explicit CLI options override YAML values. Projects are merged by name; `--repo` adds a project or replaces its source. An option targeting an unknown project produces an error. YAML paths are relative to the configuration file; CLI paths are relative to the current directory. No configuration file is loaded implicitly.
 
-| Option répétable | Champ YAML | Exemple |
+| Repeatable option | YAML field | Example |
 | --- | --- | --- |
 | `--repo` | `name`, `source` | `--repo docs=../docs` |
 | `--ref` | `ref` | `--ref docs=main` |
@@ -43,61 +50,85 @@ Les options explicitement passées en CLI remplacent les valeurs YAML. Les proje
 | `--ssh-passphrase-env` | `ssh_passphrase_env` | `--ssh-passphrase-env docs=KEY_PASSPHRASE` |
 | `--site-url-template` | `site_url_template` | `--site-url-template 'docs={repo_url}/-/blob/{commit}/{path}'` |
 
-`--output` ou `output` est obligatoire. La référence est une branche, un tag ou un SHA de commit complet. Par défaut : `HEAD` local, branche par défaut distante. Les modifications locales et fichiers non suivis sont ignorés.
+`--config` can also be written as `-c`, and `--output` as `-o`:
 
-## Connexion
+```sh
+./bin/git-exporter export -c config.example.yaml -o ./export
+```
 
-- **HTTPS** : `token_env` nomme une variable d’environnement contenant le jeton ; `username` vaut `git` par défaut. Aucun jeton n’est nécessaire pour un dépôt public. Les mots de passe intégrés à une URL sont refusés.
-- **SSH** : URL `ssh://git@serveur/chemin.git` ou `git@serveur:chemin.git`. Utilisation d’une clé `ssh_key`, éventuellement chiffrée via `ssh_passphrase_env`, ou de l’agent SSH si aucune clé n’est configurée.
-- La clé du serveur SSH est vérifiée via `known_hosts`. `SSH_KNOWN_HOSTS` permet de désigner un fichier spécifique ; sinon les emplacements usuels de go-git sont utilisés. TLS est vérifié pour HTTPS.
-- Les erreurs affichées masquent les valeurs des variables de jeton et de passphrase configurées. Les programmes externes de gestion des identifiants Git ne sont pas exécutés.
+`--output` (`-o`) or `output` is required. The reference can be a branch, tag, or full commit SHA. The default is local `HEAD` or the remote default branch. Local changes and untracked files are ignored.
 
-## Récupération distante
+## Authentication
 
-Le CLI utilise directement le protocole Git :
+- **HTTPS**: `token_env` names an environment variable containing the token; `username` defaults to `git`. Public repositories do not require a token. Passwords embedded in URLs are rejected.
+- **SSH**: use a URL such as `ssh://git@server/path.git` or `git@server:path.git`. Authentication uses `ssh_key`, optionally encrypted with a passphrase from `ssh_passphrase_env`, or the SSH agent if no key is configured.
+- The SSH server key is checked against `known_hosts`. Set `SSH_KNOWN_HOSTS` to use a specific file; otherwise, go-git's usual locations are used. TLS is verified for HTTPS.
+- Displayed errors redact the values of configured token and passphrase variables. External Git credential helpers are not executed.
 
-1. Résolution de la référence et fixation du commit à exporter.
-2. Requête filtrée `blob:none` pour les commits et arborescences accessibles depuis ce commit.
-3. Découverte des fichiers `.md` (extension insensible à la casse).
-4. Récupération des seuls blobs Markdown du commit sélectionné, dédupliqués et regroupés par lots de 128.
+For an encrypted SSH private key, `DOCS_SSH_PASSPHRASE` is an example environment
+variable containing the key's passphrase. Export it before running the CLI, then
+pass its **name** through `--ssh-passphrase-env` or the YAML `ssh_passphrase_env`
+field alongside `ssh_key`:
 
-Les contenus non Markdown et anciennes versions des fichiers ne sont pas demandés. Les métadonnées d’historique peuvent néanmoins représenter un volume important, notamment sur les dépôts anciens avec de nombreuses branches fusionnées.
+```sh
+# POSIX shell: replace the placeholder with your key's passphrase.
+export DOCS_SSH_PASSPHRASE='<your SSH key passphrase>'
+git-exporter export --repo docs=git@github.com:organization/docs.git \
+  --ssh-key docs=./keys/id_ed25519 \
+  --ssh-passphrase-env docs=DOCS_SSH_PASSPHRASE -o ./export
+```
 
-Si le serveur n’annonce pas le filtre ou refuse explicitement le filtrage ou la demande ciblée d’objets, le CLI journalise le motif, abandonne le stockage partiel et effectue un **clone complet** dans un nouveau dossier temporaire. Ce clone récupère toutes les branches et les tags accessibles, sans checkout, sous-modules ni objets Git LFS. Le commit initialement sélectionné reste celui exporté.
+The variable name is configurable and is not read automatically. With a key file
+configured, a missing named variable produces an error. Omit this setting for an
+unencrypted key. When no key file is configured, the SSH agent is used and this
+setting is ignored. Run `git-exporter export -h` for more usage examples.
 
-Les erreurs réseau, d’authentification, de clé SSH, d’annulation et de lecture/intégrité du pack sont remontées sans repli. Tous les stockages temporaires sont nettoyés à la fin. Aucun cache persistant n’est conservé.
+## Remote fetching
 
-## Documents générés
+The CLI uses the Git protocol directly:
 
-Les fichiers ordinaires sont écrits dans `<output>/<projet>/<chemin-original>`. Les liens symboliques et sous-modules sont exclus. Les images, pièces jointes et liens relatifs présents dans le corps Markdown ne sont pas copiés ni réécrits. Un pointeur LFS suivi comme fichier `.md` reste son contenu Git ; aucun objet LFS n’est téléchargé.
+1. Resolve the reference and pin the commit to export.
+2. Request commits and trees reachable from that commit using the `blob:none` filter.
+3. Discover `.md` files (case-insensitive extension).
+4. Fetch only the selected commit's Markdown blobs, deduplicated and grouped into batches of 128.
 
-| Champ | Valeur générée |
+Non-Markdown contents and older file versions are not requested. History metadata can still be substantial, especially in older repositories with many merged branches.
+
+If the server does not advertise the filter or explicitly rejects filtering or targeted object requests, the CLI logs the reason, discards the partial storage, and performs a **full clone** in a new temporary directory. This clone retrieves all accessible branches and tags, without a checkout, submodules, or Git LFS objects. The originally selected commit is still the one exported.
+
+Network, authentication, SSH host key, cancellation, and pack reading or integrity errors are reported without fallback. All temporary storage is cleaned up when finished. No persistent cache is retained.
+
+## Generated documents
+
+Regular files are written to `<output>/<project>/<original-path>`. Symbolic links and submodules are excluded. Images, attachments, and relative links in the Markdown body are neither copied nor rewritten. An LFS pointer tracked as a `.md` file is exported as its stored Git content; no LFS object is downloaded.
+
+| Field | Generated value |
 | --- | --- |
-| `title` | Chemin relatif complet, extension comprise |
-| `doc_id` | SHA-256 de `nom-projet + NUL + chemin-relatif` |
-| `description` | `Projet <nom> — <chemin relatif>` |
-| `tags` | Liste contenant `git` |
-| `site_url` | URL vers le fichier au SHA exporté |
-| `authors` | Liste contenant le nom du dernier committer |
-| `creation_date` | Date d’apparition du chemin |
-| `last_update_date` | Date de sa dernière modification |
+| `title` | Full relative path, including the extension |
+| `doc_id` | SHA-256 of `project-name + NUL + relative-path` |
+| `description` | `Project <name> — <relative path>` |
+| `tags` | List containing `git` |
+| `site_url` | URL of the file at the exported SHA |
+| `authors` | List containing the last committer's name |
+| `creation_date` | Date when the path was created |
+| `last_update_date` | Date of its last change |
 | `visibility` | `Internal` |
 
-Les dates utilisent l’horodatage du **committer**, en RFC 3339 UTC. L’historique suit les premiers parents : un changement introduit par fusion est attribué au commit de fusion. Un renommage crée une nouvelle identité ; une suppression suivie d’une recréation réinitialise la date de création. Un historique local incomplet provoque une erreur plutôt qu’une date inventée.
+Dates use the **committer** timestamp in RFC 3339 UTC format. History follows first parents: a change introduced by a merge is attributed to the merge commit. A rename creates a new identity; deletion followed by recreation resets the creation date. Incomplete local history produces an error rather than an invented date.
 
-Les champs gérés sont remplacés. Les autres valeurs YAML sont conservées, y compris celles provenant d’alias ; leur présentation et leurs commentaires peuvent être normalisés. Le corps Markdown est conservé octet pour octet. Seul le frontmatter YAML délimité par `---` est pris en charge ; les frontmatters invalides, TOML ou JSON sont rejetés.
+Managed fields are replaced. Other YAML values are preserved, including values from aliases; their formatting and comments may be normalized. The Markdown body is preserved byte for byte. Only YAML frontmatter delimited by `---` is supported; invalid, TOML, or JSON frontmatter is rejected.
 
-Les URL publiques GitHub et GitLab sont déduites de la source distante ou de `origin` pour un dépôt local. Pour une instance privée ou un autre hébergeur, fournir `site_url_template` avec `{repo_url}`, `{commit}`, `{path}`. `{repo_url}` est l’URL HTTPS du dépôt sans identifiants ni suffixe `.git`. Le chemin du document est encodé pour une URL. Un modèle absolu sans `{repo_url}` fonctionne aussi pour un dépôt local sans remote.
+Public GitHub and GitLab URLs are inferred from the remote source, or from `origin` for a local repository. For a private instance or another host, provide `site_url_template` using `{repo_url}`, `{commit}`, and `{path}`. `{repo_url}` is the repository's HTTPS URL without credentials or the `.git` suffix. The document path is URL-encoded. An absolute template without `{repo_url}` also works for a local repository without a remote.
 
-## Réexports et erreurs
+## Repeated exports and errors
 
-Chaque sous-dossier de projet contient `.git-exporter-manifest.json`, qui recense ses exports. Un réexport met à jour les fichiers actuels et supprime uniquement les anciens fichiers enregistrés devenus absents. Les fichiers étrangers sont conservés ; une collision est une erreur. Ne pas supprimer ni modifier le manifeste pour un export existant.
+Each project subdirectory contains `.git-exporter-manifest.json`, which lists its exports. A subsequent export updates current files and removes only previously recorded exports that are no longer present. Unmanaged files are preserved; a collision produces an error. Do not delete or modify the manifest for an existing export.
 
-Tous les contenus et chemins sont validés et préparés avant publication. Une erreur de préparation laisse les fichiers précédents intacts. Les écritures sont publiées par renommages individuels ; une panne système pendant la publication n’est pas une transaction atomique à l’échelle du projet. Les ancêtres symboliques et chemins sortant de la destination sont refusés. Un verrou `.git-exporter.lock` empêche deux publications simultanées : après un arrêt brutal, supprimer ce dossier seulement après avoir vérifié qu’aucun export n’est encore actif.
+All contents and paths are validated and prepared before publication. A preparation error leaves previous files intact. Files are published through individual renames; publication is not an atomic transaction for the entire project if a system failure occurs. Symbolic-link ancestors and paths escaping the destination are rejected. A `.git-exporter.lock` directory prevents concurrent publication: after an abrupt shutdown, remove it only after checking that no export is still running.
 
-Les projets sont traités séquentiellement. Un échec n’empêche pas les projets suivants de s’exécuter. Le code de sortie vaut 0 si tous réussissent, 1 sinon. Le bilan indique le mode `local`, `sélectif` ou `complet`, ainsi que les nombres de fichiers exportés et supprimés.
+Projects are processed sequentially. A failure does not prevent subsequent projects from running. The exit code is 0 if all projects succeed, or 1 otherwise. The summary reports the mode (`local`, `selective`, or `full`) and the numbers of exported and deleted files.
 
-## Vérification
+## Verification
 
 ```sh
 go test ./...
@@ -105,4 +136,4 @@ go vet ./...
 go build -o bin/git-exporter .
 ```
 
-Les tests créent des dépôts, des packs et des serveurs Git HTTPS/SSH en Go, sans exécuter la CLI Git ni contacter un hébergeur. Ils couvrent les objets transmis, le repli, les métadonnées, les lots de blobs, la vérification SSH, la configuration, le frontmatter et les suppressions contrôlées.
+Tests create repositories, packs, and HTTPS/SSH Git servers in Go without running the Git CLI or contacting a hosting provider. They cover transmitted objects, fallback, metadata, blob batches, SSH verification, configuration, frontmatter, and manifest-controlled deletions.

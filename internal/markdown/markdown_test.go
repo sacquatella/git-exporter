@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// TestTransformPreservesBodyAndCustomFields checks body and custom-field preservation,
+// managed metadata, stable output, and project-specific IDs.
 func TestTransformPreservesBodyAndCustomFields(t *testing.T) {
 	body := []byte("# Title\r\n\r\nExact body.\r\n")
 	input := append([]byte("---\r\ntitle: Old\r\ncustom:\r\n  nested: true\r\ntags: [old]\r\n---\r\n"), body...)
@@ -41,6 +43,7 @@ func TestTransformPreservesBodyAndCustomFields(t *testing.T) {
 	}
 }
 
+// TestMalformedFrontmatter checks rejection of malformed or unsupported frontmatter and acceptance of valid empty inputs.
 func TestMalformedFrontmatter(t *testing.T) {
 	for _, input := range []string{"---\ntitle: [\n---\nbody", "---\nno closing", "+++\ntitle='toml'\n+++\n", "---\n- list\n---\n", "---\ntitle: one\ntitle: two\n---\n", "{\"title\":\"json\"}\n"} {
 		if _, err := Transform([]byte(input), "p", "a.md", "https://example.test", gitdata.Metadata{}); err == nil {
@@ -54,6 +57,7 @@ func TestMalformedFrontmatter(t *testing.T) {
 	}
 }
 
+// TestSiteURL checks provider defaults, custom templates, escaped paths, and missing URL configuration errors.
 func TestSiteURL(t *testing.T) {
 	for _, test := range []struct{ remote, template, want string }{
 		{"git@github.com:org/repo.git", "", "https://github.com/org/repo/blob/abc/docs/a%20%23%C3%A9.md"},

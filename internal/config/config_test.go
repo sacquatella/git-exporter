@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestConfigurationMerge checks YAML path resolution and the precedence of CLI overrides.
 func TestConfigurationMerge(t *testing.T) {
 	dir := t.TempDir()
 	filename := filepath.Join(dir, "config.yaml")
@@ -26,6 +27,7 @@ func TestConfigurationMerge(t *testing.T) {
 	}
 }
 
+// TestInvalidConfiguration checks rejection of unknown settings, duplicate projects, unsafe names, and embedded passwords.
 func TestInvalidConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name, yaml string

@@ -14,12 +14,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SiteURL builds and validates a web URL for a file at a specific commit.
+// It escapes path segments and uses GitHub or GitLab defaults when no template is given.
 func SiteURL(remote, template, commit, filename string) (string, error) {
 	repoURL, host := "", ""
 	if remote != "" {
 		ep, err := transport.NewEndpoint(remote)
 		if err != nil {
-			return "", fmt.Errorf("URL Git invalide")
+			return "", fmt.Errorf("invalid Git URL")
 		}
 		if ep.Host != "" {
 			host = ep.Host
@@ -37,11 +39,11 @@ func SiteURL(remote, template, commit, filename string) (string, error) {
 		case "gitlab.com":
 			template = "{repo_url}/-/blob/{commit}/{path}"
 		default:
-			return "", fmt.Errorf("site_url_template requis pour cet hébergeur ou dépôt sans origin")
+			return "", fmt.Errorf("site_url_template required for this host or a repository without origin")
 		}
 	}
 	if strings.Contains(template, "{repo_url}") && repoURL == "" {
-		return "", fmt.Errorf("URL distante requise pour {repo_url}")
+		return "", fmt.Errorf("remote URL required for {repo_url}")
 	}
 	segments := strings.Split(filename, "/")
 	for i := range segments {
@@ -50,11 +52,13 @@ func SiteURL(remote, template, commit, filename string) (string, error) {
 	value := strings.NewReplacer("{repo_url}", repoURL, "{commit}", commit, "{path}", strings.Join(segments, "/")).Replace(template)
 	u, err := url.Parse(value)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.User != nil || strings.ContainsAny(value, "{}") {
-		return "", fmt.Errorf("site_url_template invalide")
+		return "", fmt.Errorf("invalid site_url_template")
 	}
 	return value, nil
 }
 
+// Transform adds or replaces managed YAML frontmatter fields using project and Git metadata.
+// It preserves the body, any UTF-8 BOM, and custom field values, and rejects invalid frontmatter.
 func Transform(input []byte, project, filename, site string, meta gitdata.Metadata) ([]byte, error) {
 	bom := []byte(nil)
 	if bytes.HasPrefix(input, []byte{0xef, 0xbb, 0xbf}) {
@@ -66,7 +70,7 @@ func Transform(input []byte, project, filename, site string, meta gitdata.Metada
 	first, rest, _ := bytes.Cut(input, []byte("\n"))
 	delimiter := strings.TrimSuffix(string(first), "\r")
 	if delimiter == "+++" || strings.HasPrefix(strings.TrimSpace(string(first)), "{") {
-		return nil, fmt.Errorf("seul le frontmatter YAML est pris en charge")
+		return nil, fmt.Errorf("only YAML frontmatter is supported")
 	}
 	if delimiter == "---" {
 		offset, closed := len(first)+1, false
@@ -78,14 +82,14 @@ func Transform(input []byte, project, filename, site string, meta gitdata.Metada
 				if len(bytes.TrimSpace(header)) > 0 {
 					var validate map[string]any
 					if err := yaml.Unmarshal(header, &validate); err != nil {
-						return nil, fmt.Errorf("frontmatter invalide: %w", err)
+						return nil, fmt.Errorf("invalid frontmatter: %w", err)
 					}
 					var document yaml.Node
 					if err := yaml.Unmarshal(header, &document); err != nil {
 						return nil, err
 					}
 					if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-						return nil, fmt.Errorf("frontmatter attendu: objet YAML")
+						return nil, fmt.Errorf("expected a YAML mapping for frontmatter")
 					}
 					// Resolve YAML aliases and merge keys before replacing managed fields.
 					// Otherwise a preserved alias could refer to an anchor we remove.
@@ -105,7 +109,7 @@ func Transform(input []byte, project, filename, site string, meta gitdata.Metada
 			rest = next
 		}
 		if !closed {
-			return nil, fmt.Errorf("frontmatter YAML non terminé")
+			return nil, fmt.Errorf("unterminated YAML frontmatter")
 		}
 	}
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte(project+"\x00"+filename)))
@@ -113,7 +117,7 @@ func Transform(input []byte, project, filename, site string, meta gitdata.Metada
 		key   string
 		value any
 	}{
-		{"title", filename}, {"doc_id", id}, {"description", "Projet " + project + " — " + filename},
+		{"title", filename}, {"doc_id", id}, {"description", "Project " + project + " — " + filename},
 		{"tags", []string{"git"}}, {"site_url", site}, {"authors", []string{meta.Committer}},
 		{"creation_date", meta.Created.UTC().Format(time.RFC3339)}, {"last_update_date", meta.Updated.UTC().Format(time.RFC3339)}, {"visibility", "Internal"},
 	}

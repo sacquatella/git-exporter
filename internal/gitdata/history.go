@@ -22,11 +22,13 @@ type Metadata struct {
 	Committer        string
 }
 
+// ordinary reports whether a tree entry represents a regular or executable file.
 func ordinary(mode filemode.FileMode) bool {
 	return mode == filemode.Regular || mode == filemode.Executable || mode == filemode.Deprecated
 }
 
-// Walk tree entries rather than FileIter: the latter attempts to load blobs.
+// MarkdownFiles recursively lists regular Markdown files in a commit, ignoring extension case.
+// It walks tree entries without loading blobs, unlike FileIter.
 func MarkdownFiles(commit *object.Commit) ([]File, error) {
 	tree, err := commit.Tree()
 	if err != nil {
@@ -55,7 +57,9 @@ func MarkdownFiles(commit *object.Commit) ([]File, error) {
 	return files, err
 }
 
-// History compares tree entries only. It never reads historical file contents.
+// History follows first-parent history to find each file's creation and last change,
+// including the last committer, since its most recent creation at the current path.
+// It compares tree entries without reading historical file contents.
 func History(ctx context.Context, commit *object.Commit, files []File) (map[string]Metadata, error) {
 	result := map[string]Metadata{}
 	active := map[string]File{}

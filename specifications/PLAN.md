@@ -1,14 +1,14 @@
-# CLI Go d’export des Markdown Git
+# Go CLI for exporting Markdown from Git
 
-## Résumé
+## Summary
 
-Créer `git-exporter`, un binaire autonome utilisant Cobra, Viper et [go-git](https://github.com/go-git/go-git). Il exportera les fichiers Markdown de dépôts locaux ou distants, enrichira leur frontmatter et supprimera les exports devenus obsolètes.
+Create `git-exporter`, a standalone binary using Cobra, Viper, and [go-git](https://github.com/go-git/go-git). It will export Markdown files from local or remote repositories, enrich their frontmatter, and remove obsolete exports.
 
-Utiliser une version stable récente de Go, avec versions des dépendances verrouillées dans `go.mod` et `go.sum`. Aucun programme Git ne sera nécessaire à l’exécution.
+Use a recent stable Go version, with dependency versions pinned in `go.mod` and `go.sum`. No Git executable will be required at runtime.
 
-## Interface et configuration
+## Interface and configuration
 
-Commande principale :
+Main command:
 
 ```sh
 git-exporter export --config config.yaml --output ./export
@@ -16,63 +16,63 @@ git-exporter export --repo documentation=https://github.com/org/docs.git \
   --ref documentation=main --output ./export
 ```
 
-- `--repo nom=source` répétable pour définir plusieurs projets ; noms uniques, utilisables comme noms de dossiers.
-- Options répétables indexées par nom de projet : `--ref`, `--token-env`, `--username`, `--ssh-key`, `--ssh-passphrase-env`, `--site-url-template`.
-- Configuration YAML contenant `output` et une liste `projects`, avec les mêmes paramètres.
-- Priorité : options CLI explicitement fournies, puis configuration, puis valeurs par défaut. Fusion des projets par nom ; une option ciblant un projet inconnu produit une erreur.
-- Chemins relatifs du YAML résolus depuis son dossier ; chemins CLI depuis le répertoire courant.
-- Authentification HTTPS par jeton lu dans une variable d’environnement ; SSH par agent ou clé privée, avec vérification `known_hosts`. Ne pas afficher les secrets.
+- Repeatable `--repo name=source` to define multiple projects; names must be unique and usable as directory names.
+- Repeatable options keyed by project name: `--ref`, `--token-env`, `--username`, `--ssh-key`, `--ssh-passphrase-env`, `--site-url-template`.
+- YAML configuration containing `output` and a `projects` list with the same settings.
+- Precedence: explicitly provided CLI options, then configuration, then defaults. Merge projects by name; an option targeting an unknown project produces an error.
+- Resolve relative YAML paths from the configuration directory and CLI paths from the current directory.
+- HTTPS authentication using a token read from an environment variable; SSH using an agent or private key, with `known_hosts` verification. Do not display secrets.
 
-## Comportement de l’export
+## Export behavior
 
-- Ouvrir les dépôts locaux en lecture seule. Pour les dépôts distants, utiliser directement le protocole Git HTTPS/SSH avec go-git : récupérer les commits et arborescences via `blob:none`, puis les seuls blobs Markdown du commit sélectionné, par lots dédupliqués. Aucun appel à une CLI Git ou aux API des hébergeurs.
-- Si le serveur ne prend pas en charge le filtrage ou refuse explicitement les objets ciblés, journaliser le motif et effectuer un clone complet (branches et tags accessibles) dans un nouveau dossier temporaire, sans checkout, sous-modules ni Git LFS. Conserver le commit sélectionné et nettoyer les stockages temporaires. Les erreurs réseau, d’authentification et d’intégrité ne déclenchent pas de repli.
-- Exporter le commit désigné par une branche, un tag ou un SHA ; utiliser `HEAD` par défaut. Ignorer les modifications locales.
-- Parcourir les fichiers ordinaires portant l’extension `.md`, sans distinction de casse. Exclure liens symboliques et sous-modules.
-- Écrire dans `<output>/<projet>/<chemin-original>`.
-- Séparer les responsabilités : configuration/CLI, accès Git et historique, transformation du Markdown, synchronisation des exports.
+- Open local repositories read-only. For remote repositories, use the Git HTTPS/SSH protocol directly through go-git: fetch commits and trees with `blob:none`, then only the selected commit's Markdown blobs in deduplicated batches. Do not invoke a Git CLI or hosting provider APIs.
+- If the server does not support filtering or explicitly rejects targeted objects, log the reason and perform a full clone (accessible branches and tags) in a new temporary directory, without a checkout, submodules, or Git LFS. Preserve the selected commit and clean up temporary storage. Network, authentication, and integrity errors do not trigger fallback.
+- Export the commit identified by a branch, tag, or SHA; default to `HEAD`. Ignore local changes.
+- Traverse regular files with a case-insensitive `.md` extension. Exclude symbolic links and submodules.
+- Write to `<output>/<project>/<original-path>`.
+- Separate responsibilities: configuration/CLI, Git access and history, Markdown transformation, and export synchronization.
 
 ### Frontmatter
 
-Lire et produire du frontmatter YAML. Conserver les champs non gérés et le corps Markdown ; remplacer les champs suivants :
+Read and produce YAML frontmatter. Preserve unmanaged fields and the Markdown body; replace the following fields:
 
-| Champ | Valeur |
+| Field | Value |
 |---|---|
-| `title` | Chemin relatif avec nom et extension du fichier |
-| `doc_id` | SHA-256 du nom de projet, d’un séparateur nul et du chemin relatif |
-| `description` | `Projet <nom> — <chemin relatif>` |
-| `tags` | Liste contenant `git` |
-| `site_url` | URL du fichier au SHA exporté |
-| `authors` | Liste contenant le nom du dernier committer ayant modifié le chemin |
-| `creation_date` | Date de première apparition du chemin |
-| `last_update_date` | Date du dernier commit ayant modifié le chemin |
+| `title` | Relative path including the filename and extension |
+| `doc_id` | SHA-256 of the project name, a NUL separator, and the relative path |
+| `description` | `Project <name> — <relative path>` |
+| `tags` | List containing `git` |
+| `site_url` | URL of the file at the exported SHA |
+| `authors` | List containing the name of the last committer who changed the path |
+| `creation_date` | Date when the path first appeared |
+| `last_update_date` | Date of the last commit that changed the path |
 | `visibility` | `Internal` |
 
-- Dates de commit au format RFC 3339 en UTC.
-- Historique suivi sur la chaîne des premiers parents du commit exporté ; les changements introduits par fusion sont attribués au commit de fusion.
-- Un renommage crée un nouveau chemin et un nouvel identifiant ; une suppression puis recréation réinitialise la date de création.
-- Détecter GitHub/GitLab publics depuis l’URL distante, ou `origin` pour un dépôt local. Pour les autres cas, utiliser un modèle configurable avec `{repo_url}`, `{commit}` et `{path}` ; encoder correctement le chemin.
-- En l’absence d’URL exploitable, demander une configuration via une erreur explicite.
-- Rejeter un frontmatter malformé ou un format non pris en charge avant de publier les fichiers du projet.
+- Use commit dates in RFC 3339 UTC format.
+- Follow the exported commit's first-parent history; changes introduced by merges are attributed to the merge commit.
+- A rename creates a new path and ID; deletion followed by recreation resets the creation date.
+- Detect public GitHub/GitLab hosts from the remote URL, or `origin` for local repositories. Otherwise, use a configurable template with `{repo_url}`, `{commit}`, and `{path}`; encode the path correctly.
+- If no usable URL is available, request configuration through an explicit error.
+- Reject malformed or unsupported frontmatter before publishing the project's files.
 
-### Synchronisation et erreurs
+### Synchronization and errors
 
-- Maintenir un manifeste des fichiers générés par projet dans la destination.
-- Préparer tous les fichiers d’un projet avant leur publication ; supprimer ensuite uniquement ses anciens exports devenus absents de la source.
-- Refuser d’écraser un fichier existant non enregistré dans le manifeste. Vérifier que tous les chemins restent dans la destination et ne traversent pas de lien symbolique.
-- Une erreur de préparation conserve les exports précédents du projet. Continuer les autres projets et terminer avec un code non nul si au moins un projet échoue.
-- Afficher un bilan par projet : fichiers exportés, supprimés et erreurs.
+- Maintain a manifest of generated files for each project in the destination.
+- Prepare all files for a project before publication; then remove only its previous exports that are no longer present in the source.
+- Refuse to overwrite existing files not recorded in the manifest. Verify that all paths remain within the destination and do not traverse symbolic links.
+- A preparation error preserves the project's previous exports. Continue processing other projects and exit with a nonzero code if any project fails.
+- Display a per-project summary: exported files, deleted files, and errors.
 
-## Validation et livraison
+## Validation and delivery
 
-- Tests de protocole avec serveurs HTTPS/SSH en Go : objets transmis, filtrage, lots de blobs, repli automatique, absence de repli sur erreurs réseau/authentification/intégrité.
-- Tests sur dépôts temporaires créés avec go-git : plusieurs projets, branche/tag, modification locale ignorée, ajout/modification/fusion/renommage/suppression et recréation.
-- Vérifier la stabilité des identifiants, les dates, les URL encodées et la préservation du corps et des champs personnalisés.
-- Tester la priorité CLI/configuration, les collisions de noms, les erreurs d’authentification et les frontmatters invalides.
-- Tester deux exports successifs, la suppression contrôlée par manifeste et la conservation des fichiers étrangers.
-- Exécuter `go test ./...`, `go vet ./...` et compiler le binaire.
-- Fournir un README et une configuration d’exemple couvrant dépôts locaux, HTTPS, SSH et plusieurs projets.
+- Protocol tests with Go HTTPS/SSH servers: transmitted objects, filtering, blob batches, automatic fallback, and no fallback on network/authentication/integrity errors.
+- Tests using temporary repositories created with go-git: multiple projects, branches/tags, ignored local changes, additions, modifications, merges, renames, deletions, and recreation.
+- Verify stable IDs, dates, encoded URLs, and preservation of the body and custom fields.
+- Test CLI/configuration precedence, name collisions, authentication errors, and invalid frontmatter.
+- Test successive exports, manifest-controlled deletion, and preservation of unmanaged files.
+- Run `go test ./...`, `go vet ./...`, and build the binary.
+- Provide a README and example configuration covering local repositories, HTTPS, SSH, and multiple projects.
 
-## Hypothèses retenues
+## Assumptions
 
-Traitement séquentiel des projets, sans cache persistant ni exécution planifiée dans cette première version. Le nom configuré du projet constitue son identité stable : le changer modifie les `doc_id` et le dossier d’export.
+Process projects sequentially, without a persistent cache or scheduled execution in this first version. The configured project name is its stable identity: changing it changes the `doc_id` values and export directory.

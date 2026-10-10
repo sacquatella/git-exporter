@@ -20,10 +20,13 @@ type manifest struct {
 	Files   []string `json:"files"`
 }
 
+// safeName reports whether name is a relative Markdown path without traversal,
+// backslashes, or colons that could make it unsafe across platforms.
 func safeName(name string) bool {
 	return name != "." && fs.ValidPath(name) && !strings.Contains(name, "\\") && !strings.Contains(name, ":") && strings.EqualFold(path.Ext(name), ".md")
 }
 
+// noSymlinks rejects symbolic links at filename or any existing ancestor.
 func noSymlinks(filename string) error {
 	absolute, err := filepath.Abs(filename)
 	if err != nil {
@@ -35,7 +38,7 @@ func noSymlinks(filename string) error {
 			return err
 		}
 		if err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("lien symbolique interdit: %s", current)
+			return fmt.Errorf("symbolic link not allowed: %s", current)
 		}
 		if filepath.Dir(current) == current {
 			break
@@ -44,9 +47,12 @@ func noSymlinks(filename string) error {
 	return nil
 }
 
+// Synchronize validates and stages a project's export under a destination lock,
+// replaces managed files, removes obsolete exports, and updates the ownership manifest.
+// It rejects collisions with unmanaged files and returns the number of files deleted.
 func Synchronize(output, project string, files map[string][]byte) (int, error) {
 	if project == "" || project == "." || project == ".." || strings.ContainsAny(project, "/\\:") {
-		return 0, fmt.Errorf("nom de projet invalide")
+		return 0, fmt.Errorf("invalid project name")
 	}
 	destination := filepath.Join(output, project)
 	if err := noSymlinks(destination); err != nil {
@@ -62,7 +68,7 @@ func Synchronize(output, project string, files map[string][]byte) (int, error) {
 	defer root.Close()
 	const lockName = ".git-exporter.lock"
 	if err := root.Mkdir(lockName, 0700); err != nil {
-		return 0, fmt.Errorf("destination verrouillée ou inaccessible: %w", err)
+		return 0, fmt.Errorf("destination locked or inaccessible: %w", err)
 	}
 	defer root.Remove(lockName)
 	if err := noSymlinks(filepath.Join(destination, manifestName)); err != nil {
@@ -72,10 +78,10 @@ func Synchronize(output, project string, files map[string][]byte) (int, error) {
 	data, err := root.ReadFile(manifestName)
 	if err == nil {
 		if err := json.Unmarshal(data, &previous); err != nil {
-			return 0, fmt.Errorf("manifeste invalide: %w", err)
+			return 0, fmt.Errorf("invalid manifest: %w", err)
 		}
 		if previous.Version != 1 || previous.Project != project {
-			return 0, fmt.Errorf("manifeste incompatible")
+			return 0, fmt.Errorf("incompatible manifest")
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return 0, err
@@ -83,7 +89,7 @@ func Synchronize(output, project string, files map[string][]byte) (int, error) {
 	owned := map[string]bool{}
 	for _, name := range previous.Files {
 		if !safeName(name) || owned[name] {
-			return 0, fmt.Errorf("chemin invalide ou dupliqué dans le manifeste: %q", name)
+			return 0, fmt.Errorf("invalid or duplicate path in manifest: %q", name)
 		}
 		owned[name] = true
 	}
@@ -94,7 +100,7 @@ func Synchronize(output, project string, files map[string][]byte) (int, error) {
 	}
 	for name := range files {
 		if !safeName(name) {
-			return 0, fmt.Errorf("chemin Markdown invalide: %q", name)
+			return 0, fmt.Errorf("invalid Markdown path: %q", name)
 		}
 		names = append(names, name)
 		all[name] = true
@@ -110,18 +116,18 @@ func Synchronize(output, project string, files map[string][]byte) (int, error) {
 		}
 		if err == nil {
 			if !info.Mode().IsRegular() {
-				return 0, fmt.Errorf("destination non ordinaire: %s", name)
+				return 0, fmt.Errorf("destination is not a regular file: %s", name)
 			}
 			if !owned[name] {
-				return 0, fmt.Errorf("refus d'écraser un fichier étranger: %s", name)
+				return 0, fmt.Errorf("refusing to overwrite an unmanaged file: %s", name)
 			}
 		}
 		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
 			if _, conflict := files[parent]; conflict {
-				return 0, fmt.Errorf("collision fichier/répertoire: %s", parent)
+				return 0, fmt.Errorf("file/directory conflict: %s", parent)
 			}
 			if info, err := root.Stat(filepath.FromSlash(parent)); err == nil && !info.IsDir() {
-				return 0, fmt.Errorf("répertoire attendu: %s", parent)
+				return 0, fmt.Errorf("expected a directory: %s", parent)
 			} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return 0, err
 			}

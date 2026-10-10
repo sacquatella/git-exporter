@@ -19,6 +19,7 @@ type Repo struct {
 	Tick int
 }
 
+// New initializes an empty Git repository in a directory cleaned up after the test.
 func New(t testing.TB) *Repo {
 	t.Helper()
 	dir := t.TempDir()
@@ -28,6 +29,9 @@ func New(t testing.TB) *Repo {
 	}
 	return &Repo{Repo: repo, Dir: dir, T: t}
 }
+
+// Commit applies file changes, treating nil contents as deletions, and creates a
+// commit with deterministic author and committer timestamps and optional parents.
 func (r *Repo) Commit(changes map[string]*string, parents ...plumbing.Hash) plumbing.Hash {
 	r.T.Helper()
 	work, err := r.Repo.Worktree()
@@ -61,4 +65,6 @@ func (r *Repo) Commit(changes map[string]*string, parents ...plumbing.Hash) plum
 	}
 	return hash
 }
+
+// Text returns a pointer to file contents for a Commit change map.
 func Text(s string) *string { return &s }

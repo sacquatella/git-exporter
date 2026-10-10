@@ -14,6 +14,8 @@ import (
 	"git-exporter/internal/testrepo"
 )
 
+// TestLocalExportAndSynchronization checks committed-content exports, obsolete-file removal,
+// foreign-file preservation, and failed preparation.
 func TestLocalExportAndSynchronization(t *testing.T) {
 	repo := testrepo.New(t)
 	first := repo.Commit(map[string]*string{"docs/a.md": testrepo.Text("---\ncustom: yes\n---\nbody\n"), "old.md": testrepo.Text("old"), "ignored.txt": testrepo.Text("skip")})
@@ -66,6 +68,8 @@ func TestLocalExportAndSynchronization(t *testing.T) {
 	}
 }
 
+// TestSynchronizationSafety checks collision, symlink, and manifest protections,
+// plus removal of obsolete files during an empty export.
 func TestSynchronizationSafety(t *testing.T) {
 	t.Run("foreign collision preflight", func(t *testing.T) {
 		output := t.TempDir()
@@ -109,6 +113,7 @@ func TestSynchronizationSafety(t *testing.T) {
 	})
 }
 
+// TestSafeError checks that raw and URL-encoded secrets are removed from displayed errors.
 func TestSafeError(t *testing.T) {
 	t.Setenv("TOKEN", "very/secret")
 	value := SafeError(fmt.Errorf("very/secret very%%2Fsecret"), config.Project{TokenEnv: "TOKEN"})

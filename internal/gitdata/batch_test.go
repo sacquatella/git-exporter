@@ -12,6 +12,8 @@ import (
 	"testing"
 )
 
+// TestBlobBatchesAndRemoteReferences checks that remote revisions resolve correctly
+// and Markdown blobs are fetched in batches of at most 128.
 func TestBlobBatchesAndRemoteReferences(t *testing.T) {
 	fixture := testrepo.New(t)
 	changes := map[string]*string{}
@@ -34,6 +36,7 @@ func TestBlobBatchesAndRemoteReferences(t *testing.T) {
 	}
 }
 
+// TestLocalAnnotatedTag checks that local and advertised annotated tags resolve to their target commit.
 func TestLocalAnnotatedTag(t *testing.T) {
 	fixture := testrepo.New(t)
 	head := fixture.Commit(map[string]*string{"a.md": testrepo.Text("body")})

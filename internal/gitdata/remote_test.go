@@ -38,6 +38,7 @@ type gitServer struct {
 	sent      []plumbing.Hash
 }
 
+// refs builds the test server's advertised references and optional filter capability.
 func (s *gitServer) refs() *packp.AdvRefs {
 	adv := packp.NewAdvRefs()
 	adv.Head = &s.head
@@ -53,6 +54,8 @@ func (s *gitServer) refs() *packp.AdvRefs {
 	return adv
 }
 
+// pack encodes the requested objects and their dependencies, honors blob filtering,
+// and records which objects the test server sends.
 func (s *gitServer) pack(req *packp.UploadRequest) ([]byte, error) {
 	selected := map[plumbing.Hash]bool{}
 	var visit func(plumbing.Hash, bool) error
@@ -112,6 +115,8 @@ func (s *gitServer) pack(req *packp.UploadRequest) ([]byte, error) {
 	return output.Bytes(), err
 }
 
+// ServeHTTP emulates authenticated Git reference discovery and upload-pack responses,
+// including configurable feature refusals, HTTP errors, and corrupt packs.
 func (s *gitServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.status != 0 {
 		http.Error(w, "failure", s.status)
@@ -163,6 +168,8 @@ func (s *gitServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// serve starts a TLS Git test server, configures its trusted client and token,
+// and registers cleanup to close the server and restore the previous transport.
 func serve(t *testing.T, s *gitServer) string {
 	t.Helper()
 	server := httptest.NewTLSServer(s)
@@ -174,6 +181,8 @@ func serve(t *testing.T, s *gitServer) string {
 	return server.URL + "/repo.git"
 }
 
+// TestSelectiveAndFallbackHTTPS checks selective HTTPS fetching and full-clone fallback,
+// including transferred objects and matching metadata.
 func TestSelectiveAndFallbackHTTPS(t *testing.T) {
 	fixture := testrepo.New(t)
 	first := fixture.Commit(map[string]*string{"docs/a.md": testrepo.Text("old"), "large.bin": testrepo.Text(strings.Repeat("B", 100000))})
@@ -188,7 +197,7 @@ func TestSelectiveAndFallbackHTTPS(t *testing.T) {
 		filter       bool
 		reject, mode string
 	}{
-		{"selective", true, "", "sélectif"}, {"no_filter", false, "", "complet"}, {"reject_blobs", true, "blob", "complet"}, {"reject_filter", true, "filter", "complet"},
+		{"selective", true, "", "selective"}, {"no_filter", false, "", "full"}, {"reject_blobs", true, "blob", "full"}, {"reject_filter", true, "filter", "full"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := &gitServer{repo: fixture.Repo, head: head, filter: test.filter, reject: test.reject}
@@ -227,7 +236,7 @@ func TestSelectiveAndFallbackHTTPS(t *testing.T) {
 			} else if fmt.Sprint(expectedMeta) != fmt.Sprint(meta) {
 				t.Fatalf("metadata differs: %v / %v", meta, expectedMeta)
 			}
-			if test.mode == "sélectif" {
+			if test.mode == "selective" {
 				for _, forbidden := range []plumbing.Hash{oldFile.Hash, binary.Hash} {
 					if source.Repo.Storer.HasEncodedObject(forbidden) == nil {
 						t.Fatalf("unnecessary object fetched: %s", forbidden)
@@ -245,7 +254,7 @@ func TestSelectiveAndFallbackHTTPS(t *testing.T) {
 					t.Fatal(log.String())
 				}
 			} else {
-				if !strings.Contains(log.String(), "clone complet") {
+				if !strings.Contains(log.String(), "full clone") {
 					t.Fatal("fallback not logged")
 				}
 				if source.Repo.Storer.HasEncodedObject(binary.Hash) != nil {
@@ -256,6 +265,8 @@ func TestSelectiveAndFallbackHTTPS(t *testing.T) {
 	}
 }
 
+// TestRemoteErrorsDoNotFallback checks that authentication, transport, integrity,
+// and cancellation errors do not trigger a full clone.
 func TestRemoteErrorsDoNotFallback(t *testing.T) {
 	fixture := testrepo.New(t)
 	head := fixture.Commit(map[string]*string{"a.md": testrepo.Text("body")})
@@ -283,6 +294,7 @@ func TestRemoteErrorsDoNotFallback(t *testing.T) {
 	}
 }
 
+// TestResolveReferences checks resolution of HEAD, branches, tags, and full hashes, and rejection of missing references.
 func TestResolveReferences(t *testing.T) {
 	fixture := testrepo.New(t)
 	head := fixture.Commit(map[string]*string{"a.md": testrepo.Text("body")})
@@ -298,6 +310,8 @@ func TestResolveReferences(t *testing.T) {
 	}
 }
 
+// TestHistoryRecreationAndFirstParent checks first-parent history, recreated and renamed paths,
+// and the use of committer metadata.
 func TestHistoryRecreationAndFirstParent(t *testing.T) {
 	fixture := testrepo.New(t)
 	first := fixture.Commit(map[string]*string{"a.md": testrepo.Text("one")})

@@ -1,27 +1,26 @@
-# Spécifications
+# Specifications
 
-Je voudrais ecrire un programme cli en go qui va rechercher tout les fichiers .md d'un projet git. Il récupère ces fichiers .md les posent dans un répertoire. Lors de la recuperation il ajoute dans le frontmatter des fichiers markdown les attributs  suivant
+I would like to write a Go CLI program that finds all .md files in a Git project. It retrieves these .md files and places them in a directory. During retrieval, it adds the following attributes to the Markdown files' frontmatter:
 
 ```markdown
-title: <repertoire+nom_du_fichier>
-doc_id: <id_unique_base_nom_et_repertoire>
-description: <projet git , repertoire et nom du fichier>
-tags: 
+title: <directory+filename>
+doc_id: <unique_id_based_on_name_and_directory>
+description: <git_project_directory_and_filename>
+tags:
 - git
-site_url: <url_du_fichier_dans_projet_git> 
-authors: 
-- <last commiter>
-creation_date: <date_creation_fichier>
-last_update_date: <date_dernier_update>
+site_url: <file_url_in_git_project>
+authors:
+- <last committer>
+creation_date: <file_creation_date>
+last_update_date: <last_update_date>
 visibility: Internal
 ```
 
-Je voudrais utiliser les lib:
+I would like to use these libraries:
 
 - viper
 - cobra
 
-Je veux que le cli puis recupérer les markdown d'un ou plusieur projets git.
-les projets gits doivent pouvoir être passé en paramètre (avec leurs paramètres de connection) depuis le cli ou defini dans un fichier de configuration.
-le repertoire cible doit pouvoir étre passé en paramètre ou défini dans le fichier de configuration.
-
+The CLI should retrieve Markdown files from one or more Git projects.
+Git projects and their connection settings must be configurable through CLI arguments or a configuration file.
+The output directory must be configurable through a CLI argument or the configuration file.

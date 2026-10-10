@@ -1,22 +1,24 @@
-# Les chemins relatifs sont résolus depuis le dossier de ce fichier.
+# Relative paths are resolved from this file's directory.
 output: ./export
 
 projects:
   - name: documentation
-    source: https://github.com/organisation/documentation.git
+    source: https://github.com/organization/documentation.git
     ref: main
     username: git
     token_env: DOCS_GIT_TOKEN
 
-  - name: interne
-    source: git@gitlab.example.com:equipe/documentation.git
+  - name: internal
+    source: git@gitlab.example.com:team/documentation.git
     ref: main
     ssh_key: ./keys/id_ed25519
+    # Export this variable with the encrypted key's passphrase before running the CLI.
+    # This is the environment variable name, not the passphrase. Omit for unencrypted keys.
     ssh_passphrase_env: DOCS_SSH_PASSPHRASE
     site_url_template: "{repo_url}/-/blob/{commit}/{path}"
 
   - name: local
-    source: ../mon-projet
-    # HEAD par défaut ; origin sert à construire les liens GitHub/GitLab.
-    # Sans origin, donner un modèle absolu :
-    site_url_template: "https://git.example.com/equipe/mon-projet/blob/{commit}/{path}"
+    source: ../my-project
+    # Defaults to HEAD; origin is used to build GitHub/GitLab links.
+    # Without origin, provide an absolute template:
+    site_url_template: "https://git.example.com/team/my-project/blob/{commit}/{path}"

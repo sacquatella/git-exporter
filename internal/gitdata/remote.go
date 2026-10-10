@@ -25,7 +25,7 @@ import (
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
 
-var ErrSelectiveUnsupported = errors.New("récupération sélective non prise en charge")
+var ErrSelectiveUnsupported = errors.New("selective fetching is not supported")
 var fullHash = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
 
 type Source struct {
@@ -36,6 +36,7 @@ type Source struct {
 	cleanup func()
 }
 
+// Close removes temporary repository storage when the source owns it.
 func (s *Source) Close() {
 	if s.cleanup != nil {
 		s.cleanup()
@@ -44,6 +45,8 @@ func (s *Source) Close() {
 
 type sessionFactory func() (transport.UploadPackSession, error)
 
+// Auth builds HTTPS token or SSH key/agent authentication from the project settings.
+// It returns an error for missing required secrets or unsupported transports.
 func Auth(p config.Project, ep *transport.Endpoint) (transport.AuthMethod, error) {
 	switch ep.Protocol {
 	case "https":
@@ -52,7 +55,7 @@ func Auth(p config.Project, ep *transport.Endpoint) (transport.AuthMethod, error
 		}
 		token, ok := os.LookupEnv(p.TokenEnv)
 		if !ok || token == "" {
-			return nil, fmt.Errorf("variable %s absente ou vide", p.TokenEnv)
+			return nil, fmt.Errorf("environment variable %s is missing or empty", p.TokenEnv)
 		}
 		username := p.Username
 		if username == "" {
@@ -75,15 +78,17 @@ func Auth(p config.Project, ep *transport.Endpoint) (transport.AuthMethod, error
 			var ok bool
 			passphrase, ok = os.LookupEnv(p.SSHPassphraseEnv)
 			if !ok {
-				return nil, fmt.Errorf("variable %s absente", p.SSHPassphraseEnv)
+				return nil, fmt.Errorf("environment variable %s is missing", p.SSHPassphraseEnv)
 			}
 		}
 		return gitssh.NewPublicKeysFromFile(username, p.SSHKey, passphrase)
 	default:
-		return nil, fmt.Errorf("transport non pris en charge: %s", ep.Protocol)
+		return nil, fmt.Errorf("unsupported transport: %s", ep.Protocol)
 	}
 }
 
+// Open opens a local repository or fetches a remote repository at the requested revision.
+// The caller must close the returned source to release any temporary storage.
 func Open(ctx context.Context, p config.Project, log io.Writer) (*Source, error) {
 	if !config.IsRemote(p.Source) {
 		repo, err := git.PlainOpen(p.Source)
@@ -122,6 +127,7 @@ func Open(ctx context.Context, p config.Project, log io.Writer) (*Source, error)
 	})
 }
 
+// advertised reads remote references and capabilities through a short-lived upload-pack session.
 func advertised(ctx context.Context, factory sessionFactory) (*packp.AdvRefs, error) {
 	session, err := factory()
 	if err != nil {
@@ -131,6 +137,8 @@ func advertised(ctx context.Context, factory sessionFactory) (*packp.AdvRefs, er
 	return session.AdvertisedReferencesContext(ctx)
 }
 
+// resolve resolves HEAD, branch names, and tag names from advertised references,
+// preferring peeled tags; it also accepts a full object hash without a remote lookup.
 func resolve(adv *packp.AdvRefs, ref string) (plumbing.Hash, error) {
 	if fullHash.MatchString(ref) {
 		return plumbing.NewHash(ref), nil
@@ -151,9 +159,11 @@ func resolve(adv *packp.AdvRefs, ref string) (plumbing.Hash, error) {
 			return resolved.Hash(), nil
 		}
 	}
-	return plumbing.ZeroHash, fmt.Errorf("référence distante introuvable: %s", ref)
+	return plumbing.ZeroHash, fmt.Errorf("remote reference not found: %s", ref)
 }
 
+// openRemote prepares temporary repository storage and fetches the selected commit.
+// It falls back to a full clone only when selective fetching is explicitly unsupported.
 func openRemote(ctx context.Context, p config.Project, log io.Writer, factory sessionFactory, clone func(string) (*git.Repository, error)) (_ *Source, err error) {
 	adv, err := advertised(ctx, factory)
 	if err != nil {
@@ -177,10 +187,10 @@ func openRemote(ctx context.Context, p config.Project, log io.Writer, factory se
 		return nil, err
 	}
 	err = selective(ctx, repo, selected, adv, factory)
-	mode := "sélectif"
+	mode := "selective"
 	if errors.Is(err, ErrSelectiveUnsupported) {
 		// Never include a raw server response here: it can contain credentials.
-		fmt.Fprintf(log, "%s: %s ; repli vers un clone complet\n", p.Name, err)
+		fmt.Fprintf(log, "%s: %s; falling back to a full clone\n", p.Name, err)
 		if removeErr := os.RemoveAll(dir); removeErr != nil {
 			return nil, removeErr
 		}
@@ -189,21 +199,23 @@ func openRemote(ctx context.Context, p config.Project, log io.Writer, factory se
 			return nil, err
 		}
 		repo, err = clone(dir)
-		mode = "complet"
+		mode = "full"
 	}
 	if err != nil {
 		return nil, err
 	}
 	commit, err := repo.CommitObject(selected)
 	if err != nil {
-		return nil, fmt.Errorf("commit sélectionné indisponible: %w", err)
+		return nil, fmt.Errorf("selected commit unavailable: %w", err)
 	}
 	return &Source{Repo: repo, Commit: commit.Hash, URL: p.Source, Mode: mode, cleanup: func() { os.RemoveAll(dir) }}, nil
 }
 
+// selective fetches commit history and trees without blobs, then downloads the
+// selected commit's distinct Markdown blobs in batches of at most 128 objects.
 func selective(ctx context.Context, repo *git.Repository, selected plumbing.Hash, adv *packp.AdvRefs, factory sessionFactory) error {
 	if !adv.Capabilities.Supports(capability.Filter) {
-		return fmt.Errorf("%w: filtre blob:none absent", ErrSelectiveUnsupported)
+		return fmt.Errorf("%w: blob:none filter unavailable", ErrSelectiveUnsupported)
 	}
 	if err := fetchObjects(ctx, repo, factory, []plumbing.Hash{selected}, true); err != nil {
 		return err
@@ -231,15 +243,15 @@ func selective(ctx context.Context, repo *git.Repository, selected plumbing.Hash
 		}
 		for _, hash := range hashes[start:end] {
 			if _, err := repo.BlobObject(hash); err != nil {
-				return fmt.Errorf("blob demandé absent: %w", err)
+				return fmt.Errorf("requested blob missing: %w", err)
 			}
 		}
 	}
 	return nil
 }
 
-// Only explicit feature/object refusals qualify for fallback. Connection,
-// authentication, cancellation and malformed pack errors must remain failures.
+// selectiveRefusal reports whether an explicit feature or object refusal permits fallback.
+// Connection, authentication, cancellation, and malformed pack errors remain failures.
 func selectiveRefusal(err error) bool {
 	if err == nil {
 		return false
@@ -260,6 +272,8 @@ func selectiveRefusal(err error) bool {
 	return false
 }
 
+// fetchObjects requests the given object hashes and stores the returned Git pack.
+// It optionally excludes blobs and classifies explicit selective-fetch refusals for fallback.
 func fetchObjects(ctx context.Context, repo *git.Repository, factory sessionFactory, hashes []plumbing.Hash, filtered bool) error {
 	session, err := factory()
 	if err != nil {
@@ -275,7 +289,7 @@ func fetchObjects(ctx context.Context, repo *git.Repository, factory sessionFact
 	req.Wants = hashes
 	if filtered {
 		if !adv.Capabilities.Supports(capability.Filter) {
-			return fmt.Errorf("%w: filtre blob:none absent", ErrSelectiveUnsupported)
+			return fmt.Errorf("%w: blob:none filter unavailable", ErrSelectiveUnsupported)
 		}
 		if err := req.Capabilities.Set(capability.Filter); err != nil {
 			return err
@@ -285,7 +299,7 @@ func fetchObjects(ctx context.Context, repo *git.Repository, factory sessionFact
 	response, err := session.UploadPack(ctx, req)
 	if err != nil {
 		if selectiveRefusal(err) {
-			return fmt.Errorf("%w: requête filtrée ou objet ciblé refusé", ErrSelectiveUnsupported)
+			return fmt.Errorf("%w: filtered request or targeted object rejected", ErrSelectiveUnsupported)
 		}
 		return err
 	}
@@ -298,9 +312,9 @@ func fetchObjects(ctx context.Context, repo *git.Repository, factory sessionFact
 	}
 	if err := packfile.UpdateObjectStorage(repo.Storer, reader); err != nil {
 		if selectiveRefusal(err) {
-			return fmt.Errorf("%w: requête filtrée ou objet ciblé refusé", ErrSelectiveUnsupported)
+			return fmt.Errorf("%w: filtered request or targeted object rejected", ErrSelectiveUnsupported)
 		}
-		return fmt.Errorf("lecture du pack Git: %w", err)
+		return fmt.Errorf("reading Git pack: %w", err)
 	}
 	return ctx.Err()
 }

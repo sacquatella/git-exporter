@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestAliasToReplacedField verifies that replacing a managed field preserves custom values referencing its YAML anchor.
 func TestAliasToReplacedField(t *testing.T) {
 	input := []byte("---\ntitle: &original Old\ncustom: *original\n---\nbody")
 	out, err := Transform(input, "p", "a.md", "https://example.test", gitdata.Metadata{})

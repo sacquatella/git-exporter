@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+// TestFullCloneAllBranchesAndCleanup checks that fallback clones include other branches
+// and tags and release temporary storage on close.
 func TestFullCloneAllBranchesAndCleanup(t *testing.T) {
 	fixture := testrepo.New(t)
 	selected := fixture.Commit(map[string]*string{"a.md": testrepo.Text("selected")})
@@ -22,7 +24,7 @@ func TestFullCloneAllBranchesAndCleanup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.Mode != "complet" || source.Commit != selected {
+	if source.Mode != "full" || source.Commit != selected {
 		t.Fatalf("%s %s", source.Mode, source.Commit)
 	}
 	if _, err := source.Repo.CommitObject(other); err != nil {
